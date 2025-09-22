@@ -1,0 +1,29 @@
+export interface Warehouse {
+  id: string;
+  name: string;
+  nameEn: string;
+  code: string;
+  type: string;
+  status: string;
+  address: string;
+  city: string;
+  governorate: string;
+  latitude?: number;
+  longitude?: number;
+  maxVolume: number;
+  maxWeight: number;
+  currentStock: number;
+  availableSpace: number;
+  reservedSpace: number;
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  managerPhone: string;
+  phone: string;
+  fax?: string;
+  email: string;
+  website?: string;
+  emergencyContact: string;
+  createdAt: Date;
+  updatedAt: Date;
+}

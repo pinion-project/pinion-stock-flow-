@@ -1,0 +1,34 @@
+export interface Transaction {
+  id: string;
+  type: string;
+  date: Date;
+  productId: string;
+  productName: string;
+  sku: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  totalAmount: number;
+  currency: string;
+  taxAmount?: number;
+  discountAmount?: number;
+  warehouseId: string;
+  warehouseName: string;
+  fromWarehouseId?: string;
+  toWarehouseId?: string;
+  supplierId?: string;
+  supplierName?: string;
+  customerId?: string;
+  customerName?: string;
+  userId: string;
+  userName: string;
+  userRole: string;
+  referenceNumber?: string;
+  invoiceNumber?: string;
+  notes?: string;
+  status: string;
+  approvedBy?: string;
+  approvedAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}

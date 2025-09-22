@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+backend/backend-requirements.md
+backend/backend-development-requirements.md
 
 # Editor directories and files
 .vscode/*
