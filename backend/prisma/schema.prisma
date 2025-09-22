@@ -1,0 +1,386 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management
+model User {
+  id          String   @id @default(cuid())
+  username    String   @unique
+  email       String   @unique
+  fullName    String
+  password    String
+  role        UserRole
+  warehouseId String?
+  isActive    Boolean  @default(true)
+  lastLogin   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  warehouse     Warehouse? @relation(fields: [warehouseId], references: [id])
+  transactions  Transaction[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  userSettings  UserSettings?
+
+  @@map("users")
+}
+
+enum UserRole {
+  GENERAL_MANAGER
+  WAREHOUSE_MANAGER
+  PURCHASING_MANAGER
+}
+
+// Warehouse Management
+model Warehouse {
+  id        String         @id @default(cuid())
+  name      String
+  nameEn    String
+  code      String         @unique
+  type      WarehouseType
+  status    WarehouseStatus @default(ACTIVE)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  // Location
+  address     String
+  city        String
+  governorate String
+  latitude    Float?
+  longitude   Float?
+
+  // Capacity
+  maxVolume      Float
+  maxWeight      Float
+  currentStock   Float @default(0)
+  availableSpace Float @default(0)
+  reservedSpace  Float @default(0)
+
+  // Manager
+  managerId    String
+  managerName  String
+  managerEmail String
+  managerPhone String
+
+  // Contact Info
+  phone           String
+  fax            String?
+  email          String
+  website        String?
+  emergencyContact String
+
+  // Relations
+  users         User[]
+  products      Product[]
+  transactions  Transaction[]
+  inventory     Inventory[]
+
+  @@map("warehouses")
+}
+
+enum WarehouseType {
+  DISTRIBUTION
+  MANUFACTURING
+  RETAIL
+  COLD_STORAGE
+  HAZMAT
+  GENERAL
+}
+
+enum WarehouseStatus {
+  ACTIVE
+  INACTIVE
+  MAINTENANCE
+  EXPANSION
+}
+
+// Product Management
+model Product {
+  id          String        @id @default(cuid())
+  name        String
+  nameEn      String
+  sku         String        @unique
+  barcode     String?       @unique
+  category    String
+  subcategory String
+  brand       String
+  model       String?
+  description String
+  unit        String
+  weight      Float?
+  length      Float?
+  width       Float?
+  height      Float?
+  status      ProductStatus @default(ACTIVE)
+  tags        String[]
+  images      String[]
+  warranty    Int?
+  expiryDate  DateTime?
+  batchNumber String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  inventory   Inventory[]
+  transactions Transaction[]
+
+  @@map("products")
+}
+
+enum ProductStatus {
+  ACTIVE
+  INACTIVE
+  DISCONTINUED
+}
+
+// Inventory Management
+model Inventory {
+  id          String @id @default(cuid())
+  productId   String
+  warehouseId String
+  quantity    Float  @default(0)
+  minStock    Float  @default(0)
+  maxStock    Float  @default(0)
+  reorderPoint Float @default(0)
+  location    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@unique([productId, warehouseId])
+  @@map("inventory")
+}
+
+// Supplier Management
+model Supplier {
+  id          String   @id @default(cuid())
+  name        String
+  nameEn      String?
+  code        String   @unique
+  email       String
+  phone       String
+  address     String
+  city        String
+  governorate String
+  country     String   @default("Egypt")
+  taxNumber   String?
+  website     String?
+  contactPerson String
+  notes       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  transactions Transaction[]
+
+  @@map("suppliers")
+}
+
+// Transaction Management
+model Transaction {
+  id              String          @id @default(cuid())
+  type            TransactionType
+  date            DateTime
+  productId       String
+  productName     String
+  sku             String
+  quantity        Float
+  unit            String
+  unitPrice       Float
+  totalAmount     Float
+  currency        String          @default("EGP")
+  taxAmount       Float?
+  discountAmount  Float?
+  warehouseId     String
+  warehouseName   String
+  fromWarehouseId String?
+  toWarehouseId   String?
+  supplierId      String?
+  supplierName    String?
+  customerId      String?
+  customerName    String?
+  userId          String
+  userName        String
+  userRole        String
+  referenceNumber String?
+  invoiceNumber   String?
+  notes           String?
+  status          TransactionStatus @default(PENDING)
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  product   Product   @relation(fields: [productId], references: [id])
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+  supplier  Supplier? @relation(fields: [supplierId], references: [id])
+  movements InventoryMovement[]
+
+  @@map("transactions")
+}
+
+enum TransactionType {
+  PURCHASE
+  SALE
+  TRANSFER
+  ADJUSTMENT
+  RETURN
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+  RETURNED
+}
+
+// Inventory Movement Tracking
+model InventoryMovement {
+  id            String   @id @default(cuid())
+  transactionId String
+  productId     String
+  productName   String
+  movementType  MovementType
+  quantity      Float
+  unit          String
+  warehouseId   String
+  warehouseName String
+  location      String?
+  previousBalance Float
+  newBalance    Float
+  unitCost      Float
+  totalCost     Float
+  date          DateTime
+  userId        String
+  userName      String
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  // Relations
+  transaction Transaction @relation(fields: [transactionId], references: [id])
+
+  @@map("inventory_movements")
+}
+
+enum MovementType {
+  IN
+  OUT
+  TRANSFER
+  ADJUSTMENT
+}
+
+// Notification System
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  title     String
+  message   String
+  type      NotificationType
+  category  NotificationCategory
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum NotificationCategory {
+  INVENTORY
+  SYSTEM
+  USER
+  REPORT
+}
+
+// Audit Logging
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String
+  entity    String
+  entityId  String
+  oldValues Json?
+  newValues Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+
+// System Settings
+model Setting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+  type  String @default("string")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+// User Settings
+model UserSettings {
+  id                    String @id @default(cuid())
+  userId                String @unique
+  language              String @default("ar")
+  timezone              String @default("Africa/Cairo")
+  dateFormat            String @default("DD/MM/YYYY")
+  currency              String @default("EGP")
+  notifications         Json
+  theme                 String @default("light")
+  itemsPerPage          Int    @default(20)
+  autoRefresh           Boolean @default(true)
+  refreshInterval       Int    @default(30)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("user_settings")
+}
+
+// File Management
+model File {
+  id          String   @id @default(cuid())
+  filename    String
+  originalName String
+  mimeType    String
+  size        Int
+  path        String
+  uploadedBy  String
+  createdAt   DateTime @default(now())
+
+  @@map("files")
+}
