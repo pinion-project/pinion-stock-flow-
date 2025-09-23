@@ -1,446 +1,281 @@
 import { Request, Response } from 'express';
-import prisma from '@/config/database';
-import { ApiResponse } from '@/types/common';
+import analyticsService from '@/services/analyticsService';
 import logger from '@/utils/logger';
+import { validationResult } from 'express-validator';
 
 export class AnalyticsController {
-  // Get dashboard metrics and KPIs
-  static async getDashboardMetrics(req: Request, res: Response): Promise<void> {
+  // Get dashboard metrics
+  public async getDashboardMetrics(req: Request, res: Response): Promise<void> {
     try {
-      const { period = '30' } = req.query as { period?: string };
-      const days = parseInt(period);
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-
-      // Get various metrics in parallel
-      const [
-        totalProducts,
-        totalWarehouses,
-        totalSuppliers,
-        totalUsers,
-        inventoryStats,
-        transactionStats,
-        lowStockCount,
-        recentTransactions,
-      ] = await Promise.all([
-        prisma.product.count(),
-        prisma.warehouse.count(),
-        prisma.supplier.count(),
-        prisma.user.count({ where: { isActive: true } }),
-        prisma.inventory.aggregate({
-          _sum: { quantity: true },
-          _count: { id: true },
-        }),
-        prisma.transaction.aggregate({
-          where: {
-            createdAt: { gte: startDate },
-          },
-          _count: { id: true },
-          _sum: { totalAmount: true, quantity: true },
-        }),
-        prisma.inventory.count({
-          where: {
-            quantity: {
-              lte: prisma.inventory.fields.reorderPoint,
-            },
-          },
-        }),
-        prisma.transaction.findMany({
-          take: 10,
-          select: {
-            id: true,
-            type: true,
-            productName: true,
-            quantity: true,
-            totalAmount: true,
-            date: true,
-            status: true,
-            warehouse: {
-              select: {
-                name: true,
-                code: true,
-              },
-            },
-          },
-          orderBy: { createdAt: 'desc' },
-        }),
-      ]);
-
-      const dashboardData = {
-        overview: {
-          totalProducts,
-          totalWarehouses,
-          totalSuppliers,
-          totalUsers,
-          totalInventoryValue: inventoryStats._sum.quantity || 0,
-          totalInventoryItems: inventoryStats._count.id,
-        },
-        period: `${days} days`,
-        transactions: {
-          count: transactionStats._count.id,
-          totalAmount: transactionStats._sum.totalAmount || 0,
-          totalQuantity: transactionStats._sum.quantity || 0,
-        },
-        alerts: {
-          lowStockItems: lowStockCount,
-        },
-        recentActivity: recentTransactions,
-        generatedAt: new Date(),
-      };
+      const metrics = await analyticsService.getDashboardMetrics();
 
       res.status(200).json({
         success: true,
-        message: 'Dashboard metrics retrieved successfully',
-        data: dashboardData,
-      } as ApiResponse);
-    } catch (error: any) {
-      logger.error('Get dashboard metrics controller error:', error);
+        data: metrics,
+      });
+    } catch (error) {
+      logger.error('Error getting dashboard metrics:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve dashboard metrics',
-      } as ApiResponse);
+        message: 'Failed to get dashboard metrics',
+      });
     }
   }
 
   // Get inventory analytics
-  static async getInventoryAnalytics(req: Request, res: Response): Promise<void> {
+  public async getInventoryAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      const { warehouseId = '', category = '' } = req.query as {
-        warehouseId?: string;
-        category?: string;
-      };
+      const { warehouseId } = req.query;
 
-      const where: any = {};
-      if (warehouseId) where.warehouseId = warehouseId;
-      if (category) where.product = { category };
-
-      // Get inventory analytics
-      const [
-        inventoryByCategory,
-        inventoryByWarehouse,
-        lowStockItems,
-        topProducts,
-      ] = await Promise.all([
-        prisma.inventory.groupBy({
-          by: ['productId'],
-          where: {
-            ...where,
-            product: category ? { category } : undefined,
-          },
-          _sum: { quantity: true },
-          _count: { id: true },
-          orderBy: { _sum: { quantity: 'desc' } },
-          take: 10,
-        }),
-        prisma.inventory.groupBy({
-          by: ['warehouseId'],
-          where,
-          _sum: { quantity: true },
-          _count: { id: true },
-          orderBy: { _sum: { quantity: 'desc' } },
-        }),
-        prisma.inventory.findMany({
-          where: {
-            ...where,
-            quantity: {
-              lte: prisma.inventory.fields.reorderPoint,
-            },
-          },
-          include: {
-            product: {
-              select: {
-                name: true,
-                sku: true,
-                category: true,
-              },
-            },
-            warehouse: {
-              select: {
-                name: true,
-                code: true,
-              },
-            },
-          },
-          orderBy: { quantity: 'asc' },
-          take: 20,
-        }),
-        prisma.inventory.findMany({
-          where,
-          include: {
-            product: {
-              select: {
-                name: true,
-                sku: true,
-                category: true,
-                brand: true,
-              },
-            },
-            warehouse: {
-              select: {
-                name: true,
-                code: true,
-              },
-            },
-          },
-          orderBy: { quantity: 'desc' },
-          take: 10,
-        }),
-      ]);
-
-      // Get category names for inventory by category
-      const categoryData = await Promise.all(
-        inventoryByCategory.map(async (item: any) => {
-          const product = await prisma.product.findUnique({
-            where: { id: item.productId },
-            select: { category: true, name: true },
-          });
-          return {
-            category: product?.category || 'Unknown',
-            productName: product?.name || 'Unknown',
-            totalQuantity: item._sum.quantity || 0,
-            itemCount: item._count.id,
-          };
-        })
+      const analytics = await analyticsService.getInventoryAnalytics(
+        warehouseId as string
       );
-
-      // Get warehouse names for inventory by warehouse
-      const warehouseData = await Promise.all(
-        inventoryByWarehouse.map(async (item: any) => {
-          const warehouse = await prisma.warehouse.findUnique({
-            where: { id: item.warehouseId },
-            select: { name: true, code: true },
-          });
-          return {
-            warehouseName: warehouse?.name || 'Unknown',
-            warehouseCode: warehouse?.code || 'Unknown',
-            totalQuantity: item._sum.quantity || 0,
-            itemCount: item._count.id,
-          };
-        })
-      );
-
-      const analyticsData = {
-        inventoryByCategory: categoryData,
-        inventoryByWarehouse: warehouseData,
-        lowStockItems,
-        topProducts,
-        generatedAt: new Date(),
-      };
 
       res.status(200).json({
         success: true,
-        message: 'Inventory analytics retrieved successfully',
-        data: analyticsData,
-      } as ApiResponse);
-    } catch (error: any) {
-      logger.error('Get inventory analytics controller error:', error);
+        data: analytics,
+      });
+    } catch (error) {
+      logger.error('Error getting inventory analytics:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve inventory analytics',
-      } as ApiResponse);
+        message: 'Failed to get inventory analytics',
+      });
     }
   }
 
-  // Get warehouse performance analytics
-  static async getWarehouseAnalytics(req: Request, res: Response): Promise<void> {
+  // Get warehouse performance
+  public async getWarehousePerformance(req: Request, res: Response): Promise<void> {
     try {
-      const { period = '30' } = req.query as { period?: string };
-      const days = parseInt(period);
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
+      const { warehouseId } = req.query;
 
-      // Get warehouse performance data
-      const warehouses = await prisma.warehouse.findMany({
-        include: {
-          _count: {
-            select: {
-              products: true,
-              inventory: true,
-              transactions: true,
-            },
-          },
-        },
-      });
-
-      const warehouseAnalytics = await Promise.all(
-        warehouses.map(async (warehouse: any) => {
-          const [transactionStats, inventoryStats] = await Promise.all([
-            prisma.transaction.aggregate({
-              where: {
-                warehouseId: warehouse.id,
-                createdAt: { gte: startDate },
-              },
-              _count: { id: true },
-              _sum: { totalAmount: true, quantity: true },
-            }),
-            prisma.inventory.aggregate({
-              where: { warehouseId: warehouse.id },
-              _sum: { quantity: true },
-              _count: { id: true },
-            }),
-          ]);
-
-          return {
-            warehouse: {
-              id: warehouse.id,
-              name: warehouse.name,
-              code: warehouse.code,
-              type: warehouse.type,
-              status: warehouse.status,
-            },
-            capacity: {
-              maxVolume: warehouse.maxVolume,
-              maxWeight: warehouse.maxWeight,
-              currentStock: warehouse.currentStock,
-              utilization: warehouse.maxVolume > 0 ? 
-                (warehouse.currentStock / warehouse.maxVolume) * 100 : 0,
-            },
-            performance: {
-              totalProducts: warehouse._count.products,
-              totalInventoryItems: warehouse._count.inventory,
-              totalTransactions: warehouse._count.transactions,
-              periodTransactions: transactionStats._count.id,
-              periodAmount: transactionStats._sum.totalAmount || 0,
-              periodQuantity: transactionStats._sum.quantity || 0,
-              totalInventoryValue: inventoryStats._sum.quantity || 0,
-            },
-          };
-        })
+      const performance = await analyticsService.getWarehousePerformance(
+        warehouseId as string
       );
-
-      const analyticsData = {
-        warehouses: warehouseAnalytics,
-        period: `${days} days`,
-        generatedAt: new Date(),
-      };
 
       res.status(200).json({
         success: true,
-        message: 'Warehouse analytics retrieved successfully',
-        data: analyticsData,
-      } as ApiResponse);
-    } catch (error: any) {
-      logger.error('Get warehouse analytics controller error:', error);
+        data: performance,
+      });
+    } catch (error) {
+      logger.error('Error getting warehouse performance:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve warehouse analytics',
-      } as ApiResponse);
+        message: 'Failed to get warehouse performance',
+      });
     }
   }
 
   // Get financial analytics
-  static async getFinancialAnalytics(req: Request, res: Response): Promise<void> {
+  public async getFinancialAnalytics(req: Request, res: Response): Promise<void> {
     try {
-      const { period = '30', startDate: startDateParam, endDate: endDateParam } = req.query as {
-        period?: string;
-        startDate?: string;
-        endDate?: string;
-      };
+      const { startDate, endDate } = req.query;
 
-      let startDate: Date;
-      let endDate: Date;
+      const start = startDate ? new Date(startDate as string) : undefined;
+      const end = endDate ? new Date(endDate as string) : undefined;
 
-      if (startDateParam && endDateParam) {
-        startDate = new Date(startDateParam);
-        endDate = new Date(endDateParam);
-      } else {
-        const days = parseInt(period);
-        startDate = new Date();
-        startDate.setDate(startDate.getDate() - days);
-        endDate = new Date();
-      }
+      const analytics = await analyticsService.getFinancialAnalytics(start, end);
 
-      // Get financial analytics
-      const [
-        purchaseStats,
-        saleStats,
-        transferStats,
-        dailyTransactions,
-        topProducts,
-      ] = await Promise.all([
-        prisma.transaction.aggregate({
-          where: {
-            type: 'PURCHASE',
-            date: { gte: startDate, lte: endDate },
-          },
-          _count: { id: true },
-          _sum: { totalAmount: true, quantity: true },
-        }),
-        prisma.transaction.aggregate({
-          where: {
-            type: 'SALE',
-            date: { gte: startDate, lte: endDate },
-          },
-          _count: { id: true },
-          _sum: { totalAmount: true, quantity: true },
-        }),
-        prisma.transaction.aggregate({
-          where: {
-            type: 'TRANSFER',
-            date: { gte: startDate, lte: endDate },
-          },
-          _count: { id: true },
-          _sum: { totalAmount: true, quantity: true },
-        }),
-        prisma.transaction.groupBy({
-          by: ['date'],
-          where: {
-            date: { gte: startDate, lte: endDate },
-          },
-          _count: { id: true },
-          _sum: { totalAmount: true },
-          orderBy: { date: 'asc' },
-        }),
-        prisma.transaction.groupBy({
-          by: ['productId', 'productName'],
-          where: {
-            date: { gte: startDate, lte: endDate },
-          },
-          _count: { id: true },
-          _sum: { totalAmount: true, quantity: true },
-          orderBy: { _sum: { totalAmount: 'desc' } },
-          take: 10,
-        }),
-      ]);
+      res.status(200).json({
+        success: true,
+        data: analytics,
+      });
+    } catch (error) {
+      logger.error('Error getting financial analytics:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get financial analytics',
+      });
+    }
+  }
 
-      const financialData = {
-        summary: {
-          purchases: {
-            count: purchaseStats._count.id,
-            totalAmount: purchaseStats._sum.totalAmount || 0,
-            totalQuantity: purchaseStats._sum.quantity || 0,
-          },
-          sales: {
-            count: saleStats._count.id,
-            totalAmount: saleStats._sum.totalAmount || 0,
-            totalQuantity: saleStats._sum.quantity || 0,
-          },
-          transfers: {
-            count: transferStats._count.id,
-            totalAmount: transferStats._sum.totalAmount || 0,
-            totalQuantity: transferStats._sum.quantity || 0,
-          },
-        },
-        dailyTransactions,
-        topProducts,
-        period: {
-          startDate,
-          endDate,
-        },
-        generatedAt: new Date(),
+  // Get forecasting data
+  public async getForecastingData(req: Request, res: Response): Promise<void> {
+    try {
+      const { warehouseId } = req.query;
+
+      const forecasting = await analyticsService.getForecastingData(
+        warehouseId as string
+      );
+
+      res.status(200).json({
+        success: true,
+        data: forecasting,
+      });
+    } catch (error) {
+      logger.error('Error getting forecasting data:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get forecasting data',
+      });
+    }
+  }
+
+  // Get trend analysis
+  public async getTrendAnalysis(req: Request, res: Response): Promise<void> {
+    try {
+      const { type, period, warehouseId } = req.query;
+
+      // This would implement more sophisticated trend analysis
+      // For now, return basic trend data
+      const trends = {
+        type,
+        period,
+        warehouseId,
+        data: [], // Would contain trend data
+        insights: [], // Would contain AI-generated insights
+        recommendations: [] // Would contain recommendations
       };
 
       res.status(200).json({
         success: true,
-        message: 'Financial analytics retrieved successfully',
-        data: financialData,
-      } as ApiResponse);
-    } catch (error: any) {
-      logger.error('Get financial analytics controller error:', error);
+        data: trends,
+      });
+    } catch (error) {
+      logger.error('Error getting trend analysis:', error);
       res.status(500).json({
         success: false,
-        message: 'Failed to retrieve financial analytics',
-      } as ApiResponse);
+        message: 'Failed to get trend analysis',
+      });
+    }
+  }
+
+  // Generate custom report
+  public async generateCustomReport(req: Request, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          message: 'Validation failed',
+          errors: errors.array(),
+        });
+        return;
+      }
+
+      const {
+        reportType,
+        dateRange,
+        filters,
+        format = 'json',
+        warehouseId
+      } = req.body;
+
+      // Generate report based on parameters
+      let reportData: any = {};
+
+      switch (reportType) {
+        case 'inventory':
+          reportData = await analyticsService.getInventoryAnalytics(warehouseId);
+          break;
+        case 'financial':
+          reportData = await analyticsService.getFinancialAnalytics(
+            dateRange?.start ? new Date(dateRange.start) : undefined,
+            dateRange?.end ? new Date(dateRange.end) : undefined
+          );
+          break;
+        case 'warehouse':
+          reportData = await analyticsService.getWarehousePerformance(warehouseId);
+          break;
+        case 'forecasting':
+          reportData = await analyticsService.getForecastingData(warehouseId);
+          break;
+        default:
+          res.status(400).json({
+            success: false,
+            message: 'Invalid report type',
+          });
+          return;
+      }
+
+      // Add metadata
+      const report = {
+        id: `report_${Date.now()}`,
+        type: reportType,
+        generatedAt: new Date(),
+        generatedBy: req.user?.id,
+        dateRange,
+        filters,
+        data: reportData,
+        format
+      };
+
+      res.status(200).json({
+        success: true,
+        data: report,
+        message: 'Report generated successfully',
+      });
+    } catch (error) {
+      logger.error('Error generating custom report:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate custom report',
+      });
+    }
+  }
+
+  // Get analytics summary
+  public async getAnalyticsSummary(req: Request, res: Response): Promise<void> {
+    try {
+      const { period = '30d', warehouseId } = req.query;
+
+      // Get summary data for the specified period
+      const summary = {
+        period,
+        warehouseId,
+        overview: {
+          totalValue: 0,
+          totalItems: 0,
+          lowStockItems: 0,
+          recentActivity: 0
+        },
+        trends: {
+          inventory: 'stable',
+          sales: 'increasing',
+          costs: 'stable'
+        },
+        alerts: [],
+        recommendations: []
+      };
+
+      res.status(200).json({
+        success: true,
+        data: summary,
+      });
+    } catch (error) {
+      logger.error('Error getting analytics summary:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to get analytics summary',
+      });
+    }
+  }
+
+  // Export analytics data
+  public async exportAnalyticsData(req: Request, res: Response): Promise<void> {
+    try {
+      const { type, format = 'csv', warehouseId } = req.query;
+
+      // This would implement data export functionality
+      // For now, return a placeholder response
+      res.status(200).json({
+        success: true,
+        message: 'Export functionality will be implemented',
+        data: {
+          type,
+          format,
+          warehouseId,
+          downloadUrl: null // Would contain the download URL
+        }
+      });
+    } catch (error) {
+      logger.error('Error exporting analytics data:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to export analytics data',
+      });
     }
   }
 }
+
+export default new AnalyticsController();

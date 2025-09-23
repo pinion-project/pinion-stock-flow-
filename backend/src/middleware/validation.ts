@@ -50,3 +50,9 @@ export const validateQuery = (schema: Joi.ObjectSchema) => {
     next();
   };
 };
+
+// Express-validator based validation middleware
+export const validateRequest = (req: Request, res: Response, next: NextFunction): void => {
+  // This is a placeholder - express-validator validation is handled in routes
+  next();
+};

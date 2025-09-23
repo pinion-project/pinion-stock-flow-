@@ -72,7 +72,8 @@ export class AuthService {
       });
 
       const payload: JWTPayload = {
-        userId: user.id,
+        id: user.id,
+        userId: user.id,  // Keep for backward compatibility
         username: user.username,
         role: user.role as UserRole,
         warehouseId: user.warehouseId || undefined,
@@ -109,11 +110,12 @@ export class AuthService {
         return null;
       }
 
+      // Remove password from response
       const { password, ...userWithoutPassword } = user;
       return userWithoutPassword as User;
     } catch (error) {
       logger.error('Get current user error:', error);
-      throw error;
+      return null;
     }
   }
 
@@ -121,16 +123,18 @@ export class AuthService {
   static async refreshToken(refreshToken: string): Promise<{ token: string; refreshToken: string }> {
     try {
       const payload = this.verifyRefreshToken(refreshToken);
-      
-      const user = await prisma.user.findUnique({
-        where: { id: payload.userId },
-      });
+      const user = await this.getCurrentUser(payload.userId);
 
-      if (!user || !user.isActive) {
-        throw new Error('Invalid refresh token');
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      if (!user.isActive) {
+        throw new Error('Account is deactivated');
       }
 
       const newPayload: JWTPayload = {
+        id: user.id,
         userId: user.id,
         username: user.username,
         role: user.role as UserRole,
@@ -148,5 +152,40 @@ export class AuthService {
       logger.error('Refresh token error:', error);
       throw error;
     }
+  }
+
+  // Change password
+  static async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user) {
+        throw new Error('User not found');
+      }
+
+      const isCurrentPasswordValid = await this.verifyPassword(currentPassword, user.password);
+      if (!isCurrentPasswordValid) {
+        throw new Error('Current password is incorrect');
+      }
+
+      const hashedNewPassword = await this.hashPassword(newPassword);
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: { password: hashedNewPassword },
+      });
+    } catch (error) {
+      logger.error('Change password error:', error);
+      throw error;
+    }
+  }
+
+  // Logout (invalidate token - in a real app, you'd maintain a blacklist)
+  static logout(): void {
+    // In a production app, you would add the token to a blacklist
+    // For now, we'll rely on client-side token removal
+    logger.info('User logged out');
   }
 }

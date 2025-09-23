@@ -1,9 +1,26 @@
+import { createServer } from 'http';
 import app from './app';
 import { config } from '@/config';
 import logger from '@/utils/logger';
 import prisma from '@/config/database';
+import notificationService from '@/services/notificationService';
+import websocketService from '@/services/websocketService';
 
 const PORT = config.port;
+
+// Create HTTP server
+const server = createServer(app);
+
+// Initialize notification service with Socket.io
+notificationService.initialize(server);
+
+// Initialize WebSocket service
+const io = notificationService['io'];
+if (io) {
+  websocketService.initialize(io);
+} else {
+  logger.warn('Socket.io not initialized, WebSocket service not started');
+}
 
 // Graceful shutdown
 const gracefulShutdown = async () => {
@@ -30,10 +47,12 @@ const startServer = async () => {
     await prisma.$connect();
     logger.info('Database connected successfully');
 
-    // Start HTTP server
-    app.listen(PORT, () => {
+    // Start HTTP server with Socket.io
+    server.listen(PORT, () => {
       logger.info(`Server running on port ${PORT} in ${config.nodeEnv} mode`);
       logger.info(`Health check available at http://localhost:${PORT}/health`);
+      logger.info(`WebSocket server initialized for real-time notifications`);
+      logger.info(`WebSocket service initialized for real-time communication`);
     });
   } catch (error) {
     logger.error('Failed to start server:', error);

@@ -79,10 +79,12 @@ model Warehouse {
   emergencyContact String
 
   // Relations
-  users         User[]
-  products      Product[]
-  transactions  Transaction[]
-  inventory     Inventory[]
+  users              User[]
+  products           Product[]
+  transactions       Transaction[]
+  inventory          Inventory[]
+  purchaseOrders     PurchaseOrder[]
+  purchaseSuggestions PurchaseSuggestion[]
 
   @@map("warehouses")
 }
@@ -130,10 +132,12 @@ model Product {
   updatedAt   DateTime      @updatedAt
 
   // Relations
-  warehouseId String
-  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
-  inventory   Inventory[]
-  transactions Transaction[]
+  warehouseId        String
+  warehouse          Warehouse @relation(fields: [warehouseId], references: [id])
+  inventory          Inventory[]
+  transactions       Transaction[]
+  purchaseOrderItems PurchaseOrderItem[]
+  purchaseSuggestions PurchaseSuggestion[]
 
   @@map("products")
 }
@@ -186,7 +190,8 @@ model Supplier {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  transactions Transaction[]
+  transactions     Transaction[]
+  purchaseOrders   PurchaseOrder[]
 
   @@map("suppliers")
 }
@@ -223,15 +228,17 @@ model Transaction {
   status          TransactionStatus @default(PENDING)
   approvedBy      String?
   approvedAt      DateTime?
+  purchaseOrderId String?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
   // Relations
-  product   Product   @relation(fields: [productId], references: [id])
-  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
-  user      User      @relation(fields: [userId], references: [id])
-  supplier  Supplier? @relation(fields: [supplierId], references: [id])
-  movements InventoryMovement[]
+  product        Product         @relation(fields: [productId], references: [id])
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id])
+  user           User            @relation(fields: [userId], references: [id])
+  supplier       Supplier?       @relation(fields: [supplierId], references: [id])
+  movements      InventoryMovement[]
+  purchaseOrder  PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
 
   @@map("transactions")
 }
@@ -383,4 +390,99 @@ model File {
   createdAt   DateTime @default(now())
 
   @@map("files")
+}
+
+// Purchase Order Management
+model PurchaseOrder {
+  id              String              @id @default(cuid())
+  orderNumber     String              @unique
+  supplierId      String
+  warehouseId     String
+  status          PurchaseOrderStatus @default(PENDING)
+  orderDate       DateTime
+  expectedDate    DateTime?
+  receivedDate    DateTime?
+  totalAmount     Float
+  currency        String              @default("EGP")
+  notes           String?
+  createdBy       String
+  approvedBy      String?
+  approvedAt      DateTime?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Relations
+  supplier        Supplier            @relation(fields: [supplierId], references: [id])
+  warehouse       Warehouse           @relation(fields: [warehouseId], references: [id])
+  items           PurchaseOrderItem[]
+  transactions    Transaction[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              String        @id @default(cuid())
+  purchaseOrderId String
+  productId       String
+  productName     String
+  sku             String
+  quantity        Float
+  unitPrice       Float
+  totalPrice      Float
+  receivedQuantity Float        @default(0)
+  notes           String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  // Relations
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  product         Product       @relation(fields: [productId], references: [id])
+
+  @@map("purchase_order_items")
+}
+
+enum PurchaseOrderStatus {
+  PENDING
+  APPROVED
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+  REJECTED
+}
+
+// Purchase Suggestions
+model PurchaseSuggestion {
+  id              String   @id @default(cuid())
+  productId       String
+  warehouseId     String
+  currentStock    Float
+  minStock        Float
+  suggestedQuantity Float
+  reason          String
+  priority        SuggestionPriority @default(MEDIUM)
+  status          SuggestionStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  product         Product   @relation(fields: [productId], references: [id])
+  warehouse       Warehouse @relation(fields: [warehouseId], references: [id])
+
+  @@unique([productId, warehouseId])
+  @@map("purchase_suggestions")
+}
+
+enum SuggestionPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum SuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  IMPLEMENTED
 }
