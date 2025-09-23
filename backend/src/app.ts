@@ -16,6 +16,9 @@ import analyticsRoutes from '@/routes/analytics';
 import notificationRoutes from '@/routes/notification';
 import fileRoutes from '@/routes/file';
 import purchaseOrderRoutes from '@/routes/purchaseOrder';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerSpec } from '@/config/swagger';
+import client from 'prom-client';
 
 const app = express();
 
@@ -66,6 +69,16 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
   });
 });
+
+// Metrics (Prometheus)
+client.collectDefaultMetrics();
+app.get('/metrics', async (_req, res) => {
+  res.set('Content-Type', client.register.contentType);
+  res.end(await client.register.metrics());
+});
+
+// Swagger docs
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // API routes
 app.use('/api/auth', authRoutes);
