@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { useAuth } from './AuthContext';
+import websocketService from '@/services/websocketService';
 
 interface RealtimeUpdate {
   id: string;
@@ -39,96 +40,65 @@ export const RealtimeProvider: React.FC<RealtimeProviderProps> = ({ children }) 
   const [isConnected, setIsConnected] = useState(false);
   const [updates, setUpdates] = useState<RealtimeUpdate[]>([]);
   const [subscribedWarehouses, setSubscribedWarehouses] = useState<Set<string>>(new Set());
-  const [ws, setWs] = useState<WebSocket | null>(null);
 
-  // محاكاة الاتصال بـ WebSocket
+  // الاتصال الحقيقي بـ WebSocket
   useEffect(() => {
     if (!isAuthenticated || !user) return;
 
-    // محاكاة إنشاء اتصال WebSocket
-    const mockWebSocket = {
-      send: (data: string) => {
-        console.log('Sending:', data);
-      },
-      close: () => {
-        setIsConnected(false);
-      }
-    } as WebSocket;
+    const url = (import.meta as any).env?.VITE_WS_URL || 'http://localhost:5000';
 
-    setWs(mockWebSocket);
-    setIsConnected(true);
+    websocketService
+      .connect({
+        url,
+        token: localStorage.getItem('auth_token') || '',
+        userId: user.id,
+        warehouseId: user.warehouseId,
+        autoReconnect: true,
+        reconnectInterval: 5000,
+        maxReconnectAttempts: 10,
+      })
+      .then(() => setIsConnected(true))
+      .catch(() => setIsConnected(false));
 
-    // محاكاة استقبال التحديثات
-    const simulateUpdates = () => {
-      const mockUpdates: RealtimeUpdate[] = [
-        {
-          id: Date.now().toString(),
-          type: 'inventory_change',
-          data: {
-            productName: 'لابتوب ديل XPS 13',
-            sku: 'DELL-XPS-001',
-            quantity: -2,
-            warehouse: 'المخزن الرئيسي',
-            reason: 'بيع للعميل'
-          },
-          timestamp: new Date().toISOString(),
-          userId: 'user-2',
-          warehouseId: 'warehouse-1'
-        },
-        {
-          id: (Date.now() + 1).toString(),
-          type: 'warehouse_update',
-          data: {
-            warehouseName: 'المخزن المسطح',
-            status: 'maintenance',
-            message: 'بدء أعمال الصيانة الدورية'
-          },
-          timestamp: new Date().toISOString(),
-          warehouseId: 'warehouse-2'
-        }
-      ];
-
-      // إضافة التحديثات تدريجياً
-      mockUpdates.forEach((update, index) => {
-        setTimeout(() => {
-          setUpdates(prev => [update, ...prev.slice(0, 49)]); // الاحتفاظ بآخر 50 تحديث
-          
-          // عرض إشعار للمستخدم
-          if (update.type === 'inventory_change') {
-            toast.info(`تم تحديث المخزون: ${update.data.productName}`, {
-              description: `الكمية: ${update.data.quantity > 0 ? '+' : ''}${update.data.quantity} في ${update.data.warehouse}`
-            });
-          } else if (update.type === 'warehouse_update') {
-            toast.warning(`تحديث المخزن: ${update.data.warehouseName}`, {
-              description: update.data.message
-            });
-          }
-        }, index * 3000); // تأخير 3 ثوان بين كل تحديث
+    const onNotification = (data: any) => {
+      toast.info(data.title || 'إشعار جديد', { description: data.message });
+    };
+    const onLowStock = (data: any) => {
+      toast.warning(`تنبيه مخزون منخفض: ${data.productName}`, {
+        description: `الكمية الحالية: ${data.currentStock}`,
       });
     };
+    const onInventory = (data: any) => {
+      setUpdates(prev => [
+        { id: String(Date.now()), type: 'inventory_change', data, timestamp: new Date().toISOString() },
+        ...prev.slice(0, 49),
+      ]);
+    };
 
-    // بدء محاكاة التحديثات بعد 5 ثوان
-    const timer = setTimeout(simulateUpdates, 5000);
+    websocketService.on('notification', onNotification);
+    websocketService.on('low_stock_alert', onLowStock);
+    websocketService.on('inventory_update', onInventory);
 
     return () => {
-      clearTimeout(timer);
-      mockWebSocket.close();
+      websocketService.off('notification', onNotification);
+      websocketService.off('low_stock_alert', onLowStock);
+      websocketService.off('inventory_update', onInventory);
+      websocketService.disconnect();
+      setIsConnected(false);
     };
   }, [isAuthenticated, user]);
 
   const sendUpdate = (update: Omit<RealtimeUpdate, 'id' | 'timestamp'>) => {
-    if (!ws || !isConnected) return;
+    if (!isConnected) return;
 
     const fullUpdate: RealtimeUpdate = {
       ...update,
       id: Date.now().toString(),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
 
-    // إرسال التحديث عبر WebSocket (محاكاة)
-    ws.send(JSON.stringify(fullUpdate));
-    
-    // إضافة التحديث محلياً
+    websocketService.send('custom_event', fullUpdate);
+
     setUpdates(prev => [fullUpdate, ...prev.slice(0, 49)]);
   };
 
@@ -138,8 +108,8 @@ export const RealtimeProvider: React.FC<RealtimeProviderProps> = ({ children }) 
 
   const subscribeToWarehouse = (warehouseId: string) => {
     setSubscribedWarehouses(prev => new Set([...prev, warehouseId]));
-    if (ws && isConnected) {
-      ws.send(JSON.stringify({ action: 'subscribe', warehouseId }));
+    if (isConnected) {
+      websocketService.send('join_warehouse', warehouseId);
     }
   };
 
@@ -149,8 +119,8 @@ export const RealtimeProvider: React.FC<RealtimeProviderProps> = ({ children }) 
       newSet.delete(warehouseId);
       return newSet;
     });
-    if (ws && isConnected) {
-      ws.send(JSON.stringify({ action: 'unsubscribe', warehouseId }));
+    if (isConnected) {
+      websocketService.send('leave_warehouse', warehouseId);
     }
   };
 
@@ -160,7 +130,7 @@ export const RealtimeProvider: React.FC<RealtimeProviderProps> = ({ children }) 
     sendUpdate,
     clearUpdates,
     subscribeToWarehouse,
-    unsubscribeFromWarehouse
+    unsubscribeFromWarehouse,
   };
 
   return (

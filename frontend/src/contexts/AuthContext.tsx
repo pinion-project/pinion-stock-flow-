@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useReducer, useEffect, ReactNode } from 'react';
 import { AuthState, AuthContextType, User, LoginCredentials, UserRole, Permission } from '@/types/auth';
-import { authService } from '@/services/authService';
+import authApiService from '@/services/authApiService';
 import { toast } from 'sonner';
 
 // حالة المصادقة الأولية
@@ -79,16 +79,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   useEffect(() => {
     const checkAuthStatus = async () => {
       try {
-        const token = localStorage.getItem('authToken');
+        const token = localStorage.getItem('auth_token');
         if (token) {
-          const user = await authService.getCurrentUser();
+          const user = await authApiService.getCurrentUser();
           dispatch({ type: 'LOGIN_SUCCESS', payload: user });
         } else {
           dispatch({ type: 'SET_LOADING', payload: false });
         }
       } catch (error) {
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
         dispatch({ type: 'SET_LOADING', payload: false });
       }
     };
@@ -100,16 +100,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const login = async (credentials: LoginCredentials) => {
     try {
       dispatch({ type: 'LOGIN_START' });
-      const response = await authService.login(credentials);
+      const response = await authApiService.login(credentials);
       
       // حفظ الرموز المميزة
-      localStorage.setItem('authToken', response.token);
-      localStorage.setItem('refreshToken', response.refreshToken);
+      localStorage.setItem('auth_token', response.token);
+      if (response.refreshToken) localStorage.setItem('refresh_token', response.refreshToken);
       
       dispatch({ type: 'LOGIN_SUCCESS', payload: response.user });
       toast.success('تم تسجيل الدخول بنجاح');
     } catch (error: any) {
-      const errorMessage = error.response?.data?.message || 'فشل في تسجيل الدخول';
+      const errorMessage = error?.message || 'فشل في تسجيل الدخول';
       dispatch({ type: 'LOGIN_FAILURE', payload: errorMessage });
       toast.error(errorMessage);
       throw error;
@@ -118,8 +118,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // دالة تسجيل الخروج
   const logout = () => {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('refresh_token');
+    authApiService.logout();
     dispatch({ type: 'LOGOUT' });
     toast.success('تم تسجيل الخروج بنجاح');
   };

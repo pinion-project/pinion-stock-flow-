@@ -13,6 +13,7 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import NotificationSettings from '@/components/notifications/NotificationSettings';
 import { useNotifications } from '@/components/notifications/NotificationProvider';
+import notificationsApi, { NotificationItem } from '@/services/notificationsApiService';
 
 interface Notification {
   id: string;
@@ -29,97 +30,9 @@ interface Notification {
 const Notifications = () => {
   const { showSuccessToast, showInfoToast } = useNotifications();
   
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      title: 'مخزون منخفض - لابتوب Dell',
-      message: 'المنتج "لابتوب Dell Inspiron 15" وصل إلى الحد الأدنى للمخزون. المتبقي: 3 قطع في المخزن الرئيسي.',
-      type: 'warning',
-      category: 'inventory',
-      timestamp: new Date(Date.now() - 5 * 60 * 1000),
-      read: false,
-      starred: true,
-      archived: false
-    },
-    {
-      id: '2',
-      title: 'تم إكمال عملية النقل',
-      message: 'تم نقل 50 قطعة من "ماوس لاسلكي Logitech" من المخزن الرئيسي إلى المخزن المسطح بنجاح.',
-      type: 'success',
-      category: 'inventory',
-      timestamp: new Date(Date.now() - 15 * 60 * 1000),
-      read: false,
-      starred: false,
-      archived: false
-    },
-    {
-      id: '3',
-      title: 'تحديث النظام مكتمل',
-      message: 'تم تحديث نظام إدارة المخازن إلى الإصدار 2.1.1 بنجاح. تم إضافة ميزات جديدة وإصلاح الأخطاء.',
-      type: 'info',
-      category: 'system',
-      timestamp: new Date(Date.now() - 30 * 60 * 1000),
-      read: true,
-      starred: false,
-      archived: false
-    },
-    {
-      id: '4',
-      title: 'مستخدم جديد - أحمد محمد',
-      message: 'تم إضافة مستخدم جديد: أحمد محمد بصلاحية "مدير مخزن" للمخزن المسطح.',
-      type: 'info',
-      category: 'user',
-      timestamp: new Date(Date.now() - 60 * 60 * 1000),
-      read: true,
-      starred: false,
-      archived: false
-    },
-    {
-      id: '5',
-      title: 'تقرير شهري جاهز',
-      message: 'تقرير المخزون الشهري لشهر يناير 2024 جاهز للمراجعة والتحميل.',
-      type: 'info',
-      category: 'report',
-      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-      read: false,
-      starred: false,
-      archived: false
-    },
-    {
-      id: '6',
-      title: 'خطأ في النسخ الاحتياطي',
-      message: 'فشل في إنشاء النسخة الاحتياطية اليومية. يرجى المحاولة مرة أخرى أو الاتصال بالدعم الفني.',
-      type: 'error',
-      category: 'system',
-      timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000),
-      read: false,
-      starred: true,
-      archived: false
-    },
-    {
-      id: '7',
-      title: 'نفاد المخزون - كيبورد ميكانيكي',
-      message: 'المنتج "كيبورد ميكانيكي RGB" نفد تماماً من جميع المخازن. يرجى إعادة الطلب.',
-      type: 'error',
-      category: 'inventory',
-      timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
-      read: true,
-      starred: false,
-      archived: false
-    },
-    {
-      id: '8',
-      title: 'تقرير أسبوعي - حركة المخزون',
-      message: 'تقرير حركة المخزون الأسبوعي متاح الآن. إجمالي الحركات: 1,247 عملية.',
-      type: 'info',
-      category: 'report',
-      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
-      read: true,
-      starred: false,
-      archived: true
-    }
-  ]);
-
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
@@ -197,6 +110,22 @@ const Notifications = () => {
     return `منذ ${days} يوم`;
   };
 
+  // Fetch notifications
+  React.useEffect(() => {
+    const load = async () => {
+      try {
+        setIsLoading(true);
+        const data = await notificationsApi.list();
+        setNotifications(data);
+      } catch (e: any) {
+        setError(e?.message || 'فشل في تحميل الإشعارات');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    load();
+  }, []);
+
   const filteredNotifications = notifications.filter(notification => {
     const matchesSearch = notification.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          notification.message.toLowerCase().includes(searchTerm.toLowerCase());
@@ -225,21 +154,29 @@ const Notifications = () => {
   const starredCount = notifications.filter(n => n.starred && !n.archived).length;
   const archivedCount = notifications.filter(n => n.archived).length;
 
-  const markAsRead = (id: string) => {
-    setNotifications(prev => 
-      prev.map(notification => 
-        notification.id === id 
-          ? { ...notification, read: true }
-          : notification
-      )
-    );
+  const markAsRead = async (id: string) => {
+    try {
+      await notificationsApi.markRead(id);
+      setNotifications(prev => 
+        prev.map(notification => 
+          notification.id === id 
+            ? { ...notification, read: true }
+            : notification
+        )
+      );
+    } catch (e: any) {
+      showInfoToast('تعذر التحديث', e?.message || 'فشل وضع علامة مقروء');
+    }
   };
 
-  const markAllAsRead = () => {
-    setNotifications(prev => 
-      prev.map(notification => ({ ...notification, read: true }))
-    );
-    showSuccessToast('تم بنجاح', 'تم وضع علامة مقروء على جميع الإشعارات');
+  const markAllAsRead = async () => {
+    try {
+      await notificationsApi.markAllRead();
+      setNotifications(prev => prev.map(notification => ({ ...notification, read: true })));
+      showSuccessToast('تم بنجاح', 'تم وضع علامة مقروء على جميع الإشعارات');
+    } catch (e: any) {
+      showInfoToast('تعذر التحديث', e?.message || 'فشل وضع علامة مقروء على الكل');
+    }
   };
 
   const toggleStar = (id: string) => {
@@ -263,9 +200,14 @@ const Notifications = () => {
     showInfoToast('تم الأرشفة', 'تم نقل الإشعار إلى الأرشيف');
   };
 
-  const deleteNotification = (id: string) => {
-    setNotifications(prev => prev.filter(notification => notification.id !== id));
-    showSuccessToast('تم الحذف', 'تم حذف الإشعار نهائياً');
+  const deleteNotification = async (id: string) => {
+    try {
+      await notificationsApi.delete(id);
+      setNotifications(prev => prev.filter(notification => notification.id !== id));
+      showSuccessToast('تم الحذف', 'تم حذف الإشعار نهائياً');
+    } catch (e: any) {
+      showInfoToast('تعذر الحذف', e?.message || 'فشل حذف الإشعار');
+    }
   };
 
   const handleBulkAction = (action: string) => {
@@ -322,89 +264,101 @@ const Notifications = () => {
                 </p>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={markAllAsRead}>
+                <Button variant="outline" onClick={markAllAsRead} disabled={isLoading}>
                   <Check className="w-4 h-4 ml-2" />
                   قراءة الكل
                 </Button>
               </div>
             </div>
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <div className="flex justify-between items-center">
-                <TabsList>
-                  <TabsTrigger value="all" className="flex items-center gap-2">
-                    <Bell className="w-4 h-4" />
-                    الكل
-                    <Badge variant="secondary">{notifications.filter(n => !n.archived).length}</Badge>
-                  </TabsTrigger>
-                  <TabsTrigger value="unread" className="flex items-center gap-2">
-                    <Eye className="w-4 h-4" />
-                    غير مقروء
-                    {unreadCount > 0 && <Badge variant="destructive">{unreadCount}</Badge>}
-                  </TabsTrigger>
-                  <TabsTrigger value="starred" className="flex items-center gap-2">
-                    <Star className="w-4 h-4" />
-                    مميز
-                    {starredCount > 0 && <Badge variant="secondary">{starredCount}</Badge>}
-                  </TabsTrigger>
-                  <TabsTrigger value="archived" className="flex items-center gap-2">
-                    <Archive className="w-4 h-4" />
-                    الأرشيف
-                    {archivedCount > 0 && <Badge variant="outline">{archivedCount}</Badge>}
-                  </TabsTrigger>
-                  <TabsTrigger value="settings" className="flex items-center gap-2">
-                    <SettingsIcon className="w-4 h-4" />
-                    الإعدادات
-                  </TabsTrigger>
-                </TabsList>
+            {error && (
+              <Card>
+                <CardContent className="p-4 text-red-600 text-sm">{error}</CardContent>
+              </Card>
+            )}
 
-                {/* Bulk Actions */}
-                {selectedNotifications.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      {selectedNotifications.length} محدد
-                    </span>
-                    <Button size="sm" variant="outline" onClick={() => handleBulkAction('read')}>
-                      <Check className="w-3 h-3 ml-1" />
-                      قراءة
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => handleBulkAction('archive')}>
-                      <Archive className="w-3 h-3 ml-1" />
-                      أرشفة
-                    </Button>
-                    <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')}>
-                      <Trash2 className="w-3 h-3 ml-1" />
-                      حذف
-                    </Button>
-                  </div>
-                )}
-              </div>
+            {isLoading ? (
+              <Card>
+                <CardContent className="p-6 text-sm text-muted-foreground">جارٍ تحميل الإشعارات...</CardContent>
+              </Card>
+            ) : (
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <div className="flex justify-between items-center">
+                  <TabsList>
+                    <TabsTrigger value="all" className="flex items-center gap-2">
+                      <Bell className="w-4 h-4" />
+                      الكل
+                      <Badge variant="secondary">{notifications.filter(n => !n.archived).length}</Badge>
+                    </TabsTrigger>
+                    <TabsTrigger value="unread" className="flex items-center gap-2">
+                      <Eye className="w-4 h-4" />
+                      غير مقروء
+                      {unreadCount > 0 && <Badge variant="destructive">{unreadCount}</Badge>}
+                    </TabsTrigger>
+                    <TabsTrigger value="starred" className="flex items-center gap-2">
+                      <Star className="w-4 h-4" />
+                      مميز
+                      {starredCount > 0 && <Badge variant="secondary">{starredCount}</Badge>}
+                    </TabsTrigger>
+                    <TabsTrigger value="archived" className="flex items-center gap-2">
+                      <Archive className="w-4 h-4" />
+                      الأرشيف
+                      {archivedCount > 0 && <Badge variant="outline">{archivedCount}</Badge>}
+                    </TabsTrigger>
+                    <TabsTrigger value="settings" className="flex items-center gap-2">
+                      <SettingsIcon className="w-4 h-4" />
+                      الإعدادات
+                    </TabsTrigger>
+                  </TabsList>
 
-              {/* Notifications List */}
-              <TabsContent value="all" className="space-y-4">
-                <NotificationsList />
-              </TabsContent>
-              
-              <TabsContent value="unread" className="space-y-4">
-                <NotificationsList />
-              </TabsContent>
-              
-              <TabsContent value="starred" className="space-y-4">
-                <NotificationsList />
-              </TabsContent>
-              
-              <TabsContent value="archived" className="space-y-4">
-                <NotificationsList />
-              </TabsContent>
+                  {/* Bulk Actions */}
+                  {selectedNotifications.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">
+                        {selectedNotifications.length} محدد
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => handleBulkAction('read')}>
+                        <Check className="w-3 h-3 ml-1" />
+                        قراءة
+                      </Button>
+                      <Button size="sm" variant="outline" onClick={() => handleBulkAction('archive')}>
+                        <Archive className="w-3 h-3 ml-1" />
+                        أرشفة
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleBulkAction('delete')}>
+                        <Trash2 className="w-3 h-3 ml-1" />
+                        حذف
+                      </Button>
+                    </div>
+                  )}
+                </div>
 
-              {/* Settings Tab */}
-              <TabsContent value="settings">
-                <NotificationSettings onSave={(settings) => {
-                  console.log('Notification settings saved:', settings);
-                  showSuccessToast('تم الحفظ', 'تم حفظ إعدادات الإشعارات بنجاح');
-                }} />
-              </TabsContent>
-            </Tabs>
+                {/* Notifications List */}
+                <TabsContent value="all" className="space-y-4">
+                  <NotificationsList />
+                </TabsContent>
+                
+                <TabsContent value="unread" className="space-y-4">
+                  <NotificationsList />
+                </TabsContent>
+                
+                <TabsContent value="starred" className="space-y-4">
+                  <NotificationsList />
+                </TabsContent>
+                
+                <TabsContent value="archived" className="space-y-4">
+                  <NotificationsList />
+                </TabsContent>
+
+                {/* Settings Tab */}
+                <TabsContent value="settings">
+                  <NotificationSettings onSave={(settings) => {
+                    console.log('Notification settings saved:', settings);
+                    showSuccessToast('تم الحفظ', 'تم حفظ إعدادات الإشعارات بنجاح');
+                  }} />
+                </TabsContent>
+              </Tabs>
+            )}
           </div>
         </main>
       </div>
