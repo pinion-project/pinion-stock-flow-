@@ -3,6 +3,7 @@ import Header from '@/components/layout/Header';
 import Sidebar from '@/components/navigation/Sidebar';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRole } from '@/types/auth';
+import analyticsApi, { DashboardMetrics } from '@/services/analyticsApiService';
 import {
   AreaChart,
   Area,
@@ -82,11 +83,28 @@ const Analytics: React.FC = () => {
   const [selectedMetric, setSelectedMetric] = useState('revenue');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
   
   // تحديد أدوار المستخدمين
   const isGeneralManager = hasRole(UserRole.GENERAL_MANAGER);
   const isWarehouseManager = hasRole(UserRole.WAREHOUSE_MANAGER);
   const isPurchasingManager = hasRole(UserRole.PURCHASING_MANAGER);
+
+  // Fetch dashboard metrics
+  useEffect(() => {
+    const load = async () => {
+      try {
+        setMetricsError(null);
+        const data = await analyticsApi.getDashboard({ period: selectedPeriod, warehouseId: selectedWarehouse === 'all' ? undefined : selectedWarehouse });
+        setMetrics(data);
+        setLastUpdated(new Date());
+      } catch (e: any) {
+        setMetricsError(e?.message || 'تعذر تحميل مؤشرات اللوحة');
+      }
+    };
+    load();
+  }, [selectedPeriod, selectedWarehouse]);
 
   // Real-time data refresh
   useEffect(() => {
@@ -97,16 +115,11 @@ const Analytics: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Calculate key metrics
-  const totalProducts = products.length;
-  const totalWarehouses = warehouses.length;
-  const activeWarehouses = warehouses.filter(w => w.status === 'active').length;
-  const totalValue = calculateTotalInventoryValue();
-  const totalCapacity = warehouses.reduce((sum, w) => sum + w.capacity, 0);
-  const usedCapacity = warehouses.reduce((sum, w) => sum + w.currentStock, 0);
-  const totalRevenue = calculateTotalRevenue();
-  const totalSuppliers = suppliers.length;
-  const totalUsers = users.length;
+  // Calculate key metrics (fallbacks)
+  const fallback_totalProducts = products.length;
+  const fallback_totalWarehouses = warehouses.length;
+  const fallback_activeWarehouses = warehouses.filter(w => w.status === 'active').length;
+  const fallback_totalValue = calculateTotalInventoryValue();
 
   // Generate sample data for charts
   const monthlyData = useMemo(() => {
@@ -184,14 +197,16 @@ const Analytics: React.FC = () => {
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setLastUpdated(new Date());
-    setIsRefreshing(false);
+    try {
+      const data = await analyticsApi.getDashboard({ period: selectedPeriod, warehouseId: selectedWarehouse === 'all' ? undefined : selectedWarehouse });
+      setMetrics(data);
+      setLastUpdated(new Date());
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   const handleExportData = (format: string) => {
-    // Export functionality would be implemented here
     console.log(`Exporting data in ${format} format`);
   };
 
@@ -251,7 +266,7 @@ const Analytics: React.FC = () => {
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">لوحة التحليلات</h1>
           <p className="text-gray-600 mt-1 text-sm sm:text-base">
-            آخر تحديث: {lastUpdated.toLocaleTimeString('ar-EG')}
+            آخر تحديث: {lastUpdated.toLocaleTimeString('ar-EG')} {metricsError ? `— ${metricsError}` : ''}
           </p>
         </div>
         
@@ -314,7 +329,7 @@ const Analytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                   <p className="text-blue-100 text-xs sm:text-sm font-medium">إجمالي القيمة</p>
-                  <p className="text-xl sm:text-2xl font-bold">{(totalValue * 15).toLocaleString()} ج.م</p>
+                  <p className="text-xl sm:text-2xl font-bold">{((metrics?.totalInventoryValue ?? fallback_totalValue) * 15).toLocaleString()} ج.م</p>
                   <div className="flex items-center gap-1 mt-2">
                     <TrendIcon value={5.2} />
                     <span className="text-blue-100 text-xs sm:text-sm">+5.2% من الشهر الماضي</span>
@@ -330,7 +345,7 @@ const Analytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-green-100 text-xs sm:text-sm font-medium">المنتجات المتاحة</p>
-                <p className="text-xl sm:text-2xl font-bold">{totalProducts.toLocaleString()}</p>
+                <p className="text-xl sm:text-2xl font-bold">{(metrics?.totalProducts ?? fallback_totalProducts).toLocaleString()}</p>
                 <div className="flex items-center gap-1 mt-2">
                   <TrendIcon value={2.1} />
                   <span className="text-xs sm:text-sm">+2.1%</span>
@@ -346,7 +361,9 @@ const Analytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-100 text-xs sm:text-sm font-medium">المستودعات النشطة</p>
-                <p className="text-xl sm:text-2xl font-bold">{activeWarehouses}/{totalWarehouses}</p>
+                <p className="text-xl sm:text-2xl font-bold">{/* active over total */}
+                  {(metrics?.totalWarehouses ?? fallback_totalWarehouses) > 0 ? `${Math.min(metrics?.totalWarehouses ?? fallback_activeWarehouses, metrics?.totalWarehouses ?? fallback_totalWarehouses)}/${metrics?.totalWarehouses ?? fallback_totalWarehouses}` : `${fallback_activeWarehouses}/${fallback_totalWarehouses}`}
+                </p>
                 <div className="flex items-center gap-1 mt-2">
                   <TrendIcon value={0} />
                   <span className="text-xs sm:text-sm">0%</span>
@@ -362,7 +379,7 @@ const Analytics: React.FC = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-orange-100 text-xs sm:text-sm font-medium">معدل الاستخدام</p>
-                <p className="text-xl sm:text-2xl font-bold">{Math.round((usedCapacity / totalCapacity) * 100)}%</p>
+                <p className="text-xl sm:text-2xl font-bold">{/* demo calc */}{Math.round((warehouses.reduce((s, w) => s + w.currentStock, 0) / Math.max(1, warehouses.reduce((s, w) => s + w.capacity, 0))) * 100)}%</p>
                 <div className="flex items-center gap-1 mt-2">
                   <TrendIcon value={-1.5} />
                   <span className="text-xs sm:text-sm">-1.5%</span>
