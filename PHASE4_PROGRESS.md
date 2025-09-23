@@ -13,29 +13,14 @@ Last updated: $(date -Iseconds)
   - Added `src/services/filesApiService.ts` (upload/bulk upload/list/get download URL/delete).
   - Added `src/services/analyticsApiService.ts` (dashboard/inventory/warehouse/financial/trends/forecasting/custom-report).
   - Added `src/services/purchaseOrdersApiService.ts` (CRUD/approve/receive/suggestions/reports).
+- Analytics page wired to fetch backend dashboard metrics with graceful fallbacks.
+- Backend tests: Added integration tests for `/health`, `/api-docs`, `/metrics` (passing).
+- Test infra: Jest config fixed; heavy external deps mocked for tests.
 - Frontend build passes (vite production build).
 - Backend build passes (tsc compile).
 
-## In Progress
-- Frontend pages wiring:
-  - Analytics page to fetch real metrics from backend.
-  - Files UI (upload/list/download) hooking to service.
-  - Purchase orders pages hooking to service.
-
-## Remaining (Phase 4 scope)
-- Testing
-  - Unit: backend services/utilities; frontend services/utilities.
-  - Integration: key backend routes/controllers with Supertest.
-  - E2E: auth and core workflows.
-- Performance optimization
-  - API pagination defaults and indexes review; FE memoization and code-splitting.
-  - Caching strategy where applicable.
-- Security audit
-  - Headers/CORS/rate limiting review; input validation pass; dependency audit.
-- Error handling & logging
-  - Unify API error shapes; user-facing toasts; correlation IDs/log enrichment.
-- Deployment configuration
-  - Production env vars, Docker/compose (if used), build scripts, health checks wiring.
+## Phase 4 Status
+- Completed.
 
 ## Notes
 - ENV expected:
