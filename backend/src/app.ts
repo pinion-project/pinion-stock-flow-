@@ -8,6 +8,11 @@ import { config } from '@/config';
 import logger from '@/utils/logger';
 import authRoutes from '@/routes/auth';
 import userRoutes from '@/routes/user';
+import warehouseRoutes from '@/routes/warehouse';
+import productRoutes from '@/routes/product';
+import inventoryRoutes from '@/routes/inventory';
+import supplierRoutes from '@/routes/supplier';
+import analyticsRoutes from '@/routes/analytics';
 
 const app = express();
 
@@ -62,6 +67,11 @@ app.get('/health', (req, res) => {
 // API routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/warehouses', warehouseRoutes);
+app.use('/api/products', productRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 // API routes will be added here
 app.use('/api', (req, res) => {
