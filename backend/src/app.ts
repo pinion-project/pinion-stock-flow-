@@ -13,6 +13,9 @@ import productRoutes from '@/routes/product';
 import inventoryRoutes from '@/routes/inventory';
 import supplierRoutes from '@/routes/supplier';
 import analyticsRoutes from '@/routes/analytics';
+import notificationRoutes from '@/routes/notification';
+import fileRoutes from '@/routes/file';
+import purchaseOrderRoutes from '@/routes/purchaseOrder';
 
 const app = express();
 
@@ -72,6 +75,9 @@ app.use('/api/products', productRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/files', fileRoutes);
+app.use('/api/purchase-orders', purchaseOrderRoutes);
 
 // API routes will be added here
 app.use('/api', (req, res) => {

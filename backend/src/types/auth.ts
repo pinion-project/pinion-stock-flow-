@@ -44,7 +44,8 @@ export interface Permission {
 }
 
 export interface JWTPayload {
-  userId: string;
+  id: string;  // Changed from userId to id for consistency
+  userId: string;  // Keep for backward compatibility
   username: string;
   role: UserRole;
   warehouseId?: string;
